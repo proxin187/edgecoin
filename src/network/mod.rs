@@ -1,6 +1,6 @@
 mod request;
 
-use std::net::{TcpListener, TcpStream, Ipv4Addr, IpAddr, SocketAddr, SocketAddrV4};
+use std::net::{TcpListener, TcpStream, SocketAddr};
 use std::sync::atomic::{Ordering, AtomicBool};
 use std::sync::{Arc, Mutex};
 use std::collections::HashMap;
@@ -23,6 +23,10 @@ macro_rules! lock {
  *
  * the incoming node will then proced to inform each node of the network that it has connected
  *
+ * when a block is submitted, all the nodes on the network will have to confirm that the block is
+ * valid, we will need a system in which we can check wether all the nodes on the network agree or
+ * not.
+ *
 */
 
 #[derive(Clone)]
@@ -33,16 +37,16 @@ pub struct Network {
 }
 
 impl Network {
-    pub fn new(port: u16) -> Network {
-        Network {
+    pub fn new(addr: String) -> Result<Network, Box<dyn std::error::Error + Send + Sync>> {
+        Ok(Network {
             nodes: Arc::new(Mutex::new(HashMap::new())),
             terminate: Arc::new(AtomicBool::new(false)),
-            addr: SocketAddr::new(IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1)), port),
-        }
+            addr: addr.parse::<SocketAddr>()?,
+        })
     }
 
-    pub fn connect(&mut self, addr: Ipv4Addr, port: u16) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
-        let mut stream = Stream::new(TcpStream::connect(SocketAddrV4::new(addr, port))?);
+    pub fn connect(&mut self, addr: String) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+        let mut stream = Stream::new(TcpStream::connect(addr)?);
 
         stream.send(Packet::Request(Request::Nodes))?;
 
@@ -82,6 +86,7 @@ impl Network {
         self.ready()?;
 
         while !self.terminate.load(Ordering::Relaxed) && !handle.is_finished() {
+            // TODO: tui application loop here
         }
 
         Ok(())
@@ -101,6 +106,8 @@ impl Listener {
 
     pub fn handle_incoming(&mut self, stream: TcpStream) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         let addr = stream.peer_addr()?;
+
+        println!("[debug] incoming: {}", addr);
 
         let mut stream = Stream::new(stream);
 
